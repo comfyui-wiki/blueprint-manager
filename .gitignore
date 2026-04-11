@@ -6,3 +6,6 @@ dist/
 build/
 .venv/
 .env
+
+# Ephemeral runtime state — wiped each server start, not committed
+.blueprint-manager-runtime/

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Blueprint Manager</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+<!-- Sidebar -->
+<div class="sidebar">
+  <div class="sidebar-header"><h2>Categories</h2></div>
+  <div class="cat-tree" id="catTree"></div>
+  <div class="sidebar-stats" id="sidebarStats"></div>
+</div>
+
+<!-- Main -->
+<div class="main">
+  <div class="toolbar">
+    <input type="text" id="searchInput" placeholder="Search blueprints…">
+    <select id="scopeSelect" onchange="setScopeFilter(this.value)" title="Filter by import status">
+      <option value="all">Show: All blueprints</option>
+      <option value="recent_only">Show: Recent imports only</option>
+    </select>
+    <select id="sortSelect" onchange="setSort(this.value)" title="Sort order">
+      <option value="name">Sort: Name</option>
+      <option value="mtime_desc">Sort: Recently modified</option>
+    </select>
+    <div class="view-toggle">
+      <button class="btn active" data-view="grid" onclick="setView('grid')">Grid</button>
+      <button class="btn" data-view="table" onclick="setView('table')">Table</button>
+    </div>
+    <div style="flex:1"></div>
+    <button class="btn" id="clearImportMarksBtn" onclick="clearImportMarks()" style="display:none"
+      title="Clear recent-import highlights (this run only)">Clear recent marks</button>
+    <button class="btn primary" onclick="openImport()">＋ Import</button>
+    <button class="btn" onclick="bulkSetCategory()">Bulk Set Category</button>
+    <button class="btn" onclick="loadData()">↻ Refresh</button>
+    <input type="file" id="fileInput" multiple accept=".json" style="display:none"
+      onchange="handleFileSelect(this.files)">
+  </div>
+  <div id="bulkBar" class="bulk-bar" style="display:none">
+    <input type="checkbox" class="checkbox" id="selectAllCb" onchange="toggleSelectAll()">
+    <span id="bulkCount">0 selected</span>
+    <button class="btn" onclick="bulkApplyCategory()">Set Category…</button>
+    <div style="flex:1"></div>
+    <button class="btn" onclick="exitBulk()">Cancel</button>
+  </div>
+  <div class="content" id="content"></div>
+</div>
+
+<!-- Modal container -->
+<div id="modalOverlay" class="modal-overlay" style="display:none"
+  onclick="if(event.target===this)closeModal()"></div>
+
+<!-- Drop overlay -->
+<div id="dropOverlay" class="drop-overlay" style="display:none">
+  <span>Drop .json files to import</span>
+</div>
+
+<!-- Toast container -->
+<div id="toastContainer"></div>
+
+<!-- Ace Editor (JSON syntax highlighting + editing) -->
+<script src="https://cdn.jsdelivr.net/npm/ace-builds@1.36.5/src-noconflict/ace.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ace-builds@1.36.5/src-noconflict/mode-json.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/ace-builds@1.36.5/src-noconflict/theme-one_dark.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
