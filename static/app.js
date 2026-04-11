@@ -187,6 +187,35 @@ function setView(v) {
 }
 
 // ── Grid / Table ───────────────────────────────────────────────────────────
+// ── Action dropdown helper ─────────────────────────────────────────────────
+function moreMenu(fn) {
+  const f = escAttr(fn);
+  return `<div class="more-menu">
+    <button class="btn more-trigger" onclick="toggleMoreMenu(this)" title="More actions">⋯</button>
+    <div class="more-dropdown">
+      <button class="dropdown-item" onclick="downloadBlueprint('${f}')">↓ Download</button>
+      <button class="dropdown-item" onclick="openRename('${f}')">Rename</button>
+      <button class="dropdown-item" onclick="openReplace('${f}')">Replace file…</button>
+      <button class="dropdown-item" onclick="openValidate('${f}')">Validate schema</button>
+      <div class="dropdown-divider"></div>
+      <button class="dropdown-item danger" onclick="openDelete('${f}')">Delete</button>
+    </div>
+  </div>`;
+}
+
+function toggleMoreMenu(btn) {
+  const menu = btn.closest('.more-menu');
+  const isOpen = menu.classList.contains('open');
+  document.querySelectorAll('.more-menu.open').forEach(m => m.classList.remove('open'));
+  if (!isOpen) {
+    menu.classList.add('open');
+    const close = (e) => {
+      if (!menu.contains(e.target)) { menu.classList.remove('open'); document.removeEventListener('click', close); }
+    };
+    setTimeout(() => document.addEventListener('click', close), 0);
+  }
+}
+
 function renderGrid(items) {
   let html = '<div class="bp-grid">';
   items.forEach(bp => {
@@ -198,7 +227,7 @@ function renderGrid(items) {
         ${selectedSet.has(bp.filename)?'checked':''}
         onchange="toggleSelect('${escAttr(bp.filename)}', this.checked)">`;
     html += `<div class="bp-name">${esc(bp.filename.replace('.json',''))}`;
-    if (isNew) html += ` <span class="badge new-import">Recent import</span>`;
+    if (isNew) html += ` <span class="badge new-import">New</span>`;
     html += `</div>`;
     bp.subgraphs.forEach(sg => {
       const catColor = sg.category ? categoryColor(sg.category) : 'var(--orange)';
@@ -211,9 +240,7 @@ function renderGrid(items) {
     html += `<div class="bp-actions">
       <button class="btn" onclick="openView('${escAttr(bp.filename)}')">View / Edit</button>
       <button class="btn" onclick="openEdit('${escAttr(bp.filename)}')">Category</button>
-      <button class="btn" onclick="downloadBlueprint('${escAttr(bp.filename)}')">↓</button>
-      <button class="btn" onclick="openRename('${escAttr(bp.filename)}')">Rename</button>
-      <button class="btn danger" onclick="openDelete('${escAttr(bp.filename)}')">Delete</button>
+      ${moreMenu(bp.filename)}
     </div></div>`;
   });
   html += '</div>';
@@ -232,7 +259,7 @@ function renderTable(items) {
           onchange="toggleSelect('${escAttr(bp.filename)}', this.checked)"></td>`;
       const isNew = isRecentImport(bp);
       html += `<td>${i===0 ? esc(bp.filename.replace('.json','')) +
-        (isNew ? ' <span class="badge new-import">Recent import</span>' : '') : ''}</td>
+        (isNew ? ' <span class="badge new-import">New</span>' : '') : ''}</td>
         <td>${esc(sg.name)}</td><td>`;
       if (sg.category) {
         const c = categoryColor(sg.category);
@@ -243,11 +270,11 @@ function renderTable(items) {
         html += `<span class="badge warn">No category</span>`;
       }
       html += `</td><td>
-        <button class="btn" onclick="openView('${escAttr(bp.filename)}')">View/Edit</button>
-        <button class="btn" onclick="openEdit('${escAttr(bp.filename)}')">Category</button>
-        <button class="btn" onclick="downloadBlueprint('${escAttr(bp.filename)}')">↓</button>
-        <button class="btn" onclick="openRename('${escAttr(bp.filename)}')">Rename</button>
-        <button class="btn danger" onclick="openDelete('${escAttr(bp.filename)}')">Delete</button>
+        <div style="display:flex;gap:4px;align-items:center">
+          <button class="btn" onclick="openView('${escAttr(bp.filename)}')">View / Edit</button>
+          <button class="btn" onclick="openEdit('${escAttr(bp.filename)}')">Category</button>
+          ${moreMenu(bp.filename)}
+        </div>
       </td></tr>`;
     });
   });
@@ -690,6 +717,252 @@ closeModal = function() {
   if (_aceEditor) { _aceEditor.destroy(); _aceEditor = null; }
   _origCloseModal();
 };
+
+// ── Schema validation ──────────────────────────────────────────────────────
+
+/** Render a validation result object into an HTML string for display. */
+function renderValidationResult(result) {
+  const { ok, error_count, warning_count, issues } = result;
+
+  // Summary pill
+  let summary = '';
+  if (ok && warning_count === 0) {
+    summary = `<div class="val-summary ok">✓ All checks passed</div>`;
+  } else {
+    const parts = [];
+    if (error_count > 0) parts.push(`${error_count} error${error_count > 1 ? 's' : ''}`);
+    if (warning_count > 0) parts.push(`${warning_count} warning${warning_count > 1 ? 's' : ''}`);
+    summary = `<div class="val-summary ${ok ? 'warn' : 'err'}">${ok ? '⚠' : '✗'} ${parts.join(', ')}</div>`;
+  }
+
+  if (!issues || issues.length === 0) return summary;
+
+  const rows = issues.map(i => {
+    const icon = i.level === 'error' ? '✗' : '⚠';
+    const cls  = i.level === 'error' ? 'val-err' : 'val-warn';
+    return `<tr class="${cls}">
+      <td style="padding:5px 8px;white-space:nowrap">${icon}</td>
+      <td style="padding:5px 8px;font-family:monospace;font-size:11px;color:var(--text2);white-space:nowrap">${esc(i.path)}</td>
+      <td style="padding:5px 8px">${esc(i.message)}</td>
+    </tr>`;
+  }).join('');
+
+  return `${summary}
+    <div style="overflow-x:auto;margin-top:12px">
+      <table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="color:var(--text2)">
+          <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--border)"></th>
+          <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--border)">Path</th>
+          <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--border)">Issue</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+/** Validate a single blueprint file and show a modal with the results. */
+async function openValidate(filename) {
+  showModal(`<div class="modal" style="width:640px;max-width:96vw">
+    <h3>Schema Validation</h3>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:16px">${esc(filename)}</p>
+    <div id="valContent" style="font-size:13px">
+      <span style="color:var(--text2)">Validating…</span>
+    </div>
+    <div class="modal-actions" style="margin-top:20px">
+      <button class="btn primary" onclick="closeModal()">Close</button>
+    </div>
+  </div>`);
+
+  const r = await api('GET', '/blueprints/' + encodeURIComponent(filename) + '/validate');
+  document.getElementById('valContent').innerHTML = renderValidationResult(r);
+}
+
+/** Validate all blueprint files and show a summary modal. */
+async function openValidateAll() {
+  showModal(`<div class="modal" style="width:760px;max-width:96vw;max-height:85vh">
+    <h3>Validate All Blueprints</h3>
+    <div id="valAllContent" style="font-size:13px;margin-top:4px">
+      <span style="color:var(--text2)">Validating all files…</span>
+    </div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button class="btn primary" onclick="closeModal()">Close</button>
+    </div>
+  </div>`);
+
+  const results = await api('GET', '/validate-all');
+  if (!Array.isArray(results)) {
+    document.getElementById('valAllContent').innerHTML =
+      `<span style="color:var(--red)">Failed to load validation results.</span>`;
+    return;
+  }
+
+  const total   = results.length;
+  const passed  = results.filter(r => r.ok && r.warning_count === 0).length;
+  const warned  = results.filter(r => r.ok && r.warning_count > 0).length;
+  const failed  = results.filter(r => !r.ok).length;
+
+  let html = `<div style="display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;font-size:13px">
+    <span>${total} files checked</span>
+    <span style="color:var(--green)">✓ ${passed} passed</span>
+    ${warned  ? `<span style="color:var(--orange)">⚠ ${warned} with warnings</span>` : ''}
+    ${failed  ? `<span style="color:var(--red)">✗ ${failed} with errors</span>` : ''}
+  </div>`;
+
+  // Sort: errors first, then warnings, then clean
+  const sorted = [...results].sort((a, b) => {
+    const rank = r => (!r.ok ? 0 : r.warning_count > 0 ? 1 : 2);
+    return rank(a) - rank(b) || a.filename.localeCompare(b.filename);
+  });
+
+  html += `<div style="overflow-y:auto;max-height:52vh">`;
+  sorted.forEach(r => {
+    const hasIssues = r.error_count > 0 || r.warning_count > 0;
+    const statusIcon = !r.ok ? '✗' : r.warning_count > 0 ? '⚠' : '✓';
+    const statusColor = !r.ok ? 'var(--red)' : r.warning_count > 0 ? 'var(--orange)' : 'var(--green)';
+    const badge = !r.ok
+      ? `${r.error_count}E ${r.warning_count}W`
+      : r.warning_count > 0 ? `${r.warning_count}W` : '';
+
+    html += `<details class="val-file-row" ${!r.ok ? 'open' : ''}>
+      <summary style="display:flex;align-items:center;gap:8px;padding:8px 4px;cursor:pointer;
+        border-bottom:1px solid var(--border);list-style:none;user-select:none">
+        <span style="color:${statusColor};width:16px;text-align:center">${statusIcon}</span>
+        <span style="flex:1;font-size:12px;word-break:break-all">${esc(r.filename)}</span>
+        ${badge ? `<span style="font-size:11px;color:${statusColor};white-space:nowrap">${badge}</span>` : ''}
+        ${hasIssues ? `<span style="font-size:10px;color:var(--text2)">▼</span>` : ''}
+      </summary>`;
+    if (hasIssues) {
+      html += `<div style="padding:8px 0 4px 24px">${renderValidationResult(r)}</div>`;
+    }
+    html += `</details>`;
+  });
+  html += `</div>`;
+
+  document.getElementById('valAllContent').innerHTML = html;
+}
+
+// ── Replace file ──────────────────────────────────────────────────────────
+let _replaceContent = null;
+
+function openReplace(filename) {
+  _replaceContent = null;
+  const bp = blueprints.find(b => b.filename === filename);
+  if (!bp) return;
+
+  showModal(`<div class="modal" style="width:600px;max-width:96vw">
+    <h3>Replace Blueprint</h3>
+    <p style="font-size:13px;color:var(--text2);margin-bottom:16px">${esc(filename)}</p>
+    <div id="replaceDropZone" class="replace-dropzone"
+      onclick="document.getElementById('replaceFileInput').click()">
+      <input type="file" id="replaceFileInput" accept=".json" style="display:none"
+        onchange="handleReplaceFile(this.files[0],'${escAttr(filename)}')">
+      <div style="font-size:28px;margin-bottom:6px;opacity:.6">📂</div>
+      <div style="font-size:13px;color:var(--text2)">Click to select a .json file, or drag &amp; drop</div>
+    </div>
+    <div id="replaceValidation" style="margin-top:16px"></div>
+    <div class="modal-actions">
+      <button class="btn" onclick="closeModal()">Cancel</button>
+      <button class="btn primary" id="replaceConfirmBtn" disabled
+        onclick="confirmReplace('${escAttr(filename)}')">Replace</button>
+    </div>
+  </div>`);
+
+  const dz = document.getElementById('replaceDropZone');
+  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dragover'); });
+  dz.addEventListener('dragleave', () => dz.classList.remove('dragover'));
+  dz.addEventListener('drop', e => {
+    e.preventDefault(); dz.classList.remove('dragover');
+    const f = [...e.dataTransfer.files].find(f => f.name.endsWith('.json'));
+    if (f) handleReplaceFile(f, filename);
+    else toast('Please drop a .json file', true);
+  });
+}
+
+async function handleReplaceFile(file, filename) {
+  const bp = blueprints.find(b => b.filename === filename);
+  if (!file || !bp) return;
+
+  let text, newData;
+  try {
+    text = await file.text();
+    newData = JSON.parse(text);
+  } catch(e) {
+    document.getElementById('replaceValidation').innerHTML =
+      `<div style="padding:12px;background:rgba(248,81,73,.08);border-radius:var(--radius);
+        color:var(--red);font-size:13px">✗ Invalid JSON — ${esc(e.message)}</div>`;
+    document.getElementById('replaceConfirmBtn').disabled = true;
+    return;
+  }
+
+  _replaceContent = text;
+  const newSgs = newData?.definitions?.subgraphs ?? [];
+  const oldSgs = bp.subgraphs;
+  const sameCount = newSgs.length === oldSgs.length;
+
+  let html = `<div style="font-size:13px">`;
+
+  // Summary row
+  html += `<div style="display:flex;gap:16px;margin-bottom:14px;flex-wrap:wrap">
+    <span style="color:var(--green)">✓ Valid JSON</span>
+    <span>Subgraphs: <b>${oldSgs.length}</b> → <b>${newSgs.length}</b>
+      ${sameCount
+        ? '<span style="color:var(--green)">✓ same count</span>'
+        : '<span style="color:var(--orange)">⚠ count changed</span>'}
+    </span>
+  </div>`;
+
+  // Comparison table
+  if (newSgs.length > 0 || oldSgs.length > 0) {
+    html += `<div style="overflow-x:auto;margin-bottom:14px">
+    <table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr style="color:var(--text2)">
+        <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--border)">#</th>
+        <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--border)">Current name</th>
+        <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--border)">New name</th>
+        <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--border)">Current category</th>
+        <th style="padding:5px 8px;text-align:left;border-bottom:1px solid var(--border)">ID</th>
+      </tr></thead><tbody>`;
+    const maxLen = Math.max(oldSgs.length, newSgs.length);
+    for (let i = 0; i < maxLen; i++) {
+      const o = oldSgs[i], n = newSgs[i];
+      const nameMatch = o && n && o.name === n.name;
+      const idMatch = o && n && o.id === n.id;
+      html += `<tr>
+        <td style="padding:5px 8px;color:var(--text2);border-bottom:1px solid var(--border)">${i}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid var(--border)">${o ? esc(o.name) : '<span style="color:var(--text2)">—</span>'}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid var(--border);${!nameMatch&&o&&n?'color:var(--orange)':''}">${n ? esc(n.name) : '<span style="color:var(--text2)">—</span>'}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid var(--border);color:var(--text2)">${o?.category ? esc(o.category) : '—'}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid var(--border)">${idMatch ? '<span style="color:var(--green)">✓ match</span>' : (o&&n ? '<span style="color:var(--orange)">≠</span>' : '<span style="color:var(--text2)">—</span>')}</td>
+      </tr>`;
+    }
+    html += `</tbody></table></div>`;
+  }
+
+  // Preserve categories toggle
+  html += `<label style="display:flex;align-items:center;gap:8px;cursor:pointer;
+    padding:10px;background:var(--surface2);border-radius:var(--radius)">
+    <input type="checkbox" id="preserveCatsCheck" checked style="accent-color:var(--accent)">
+    <span><b>Preserve existing category assignments</b><br>
+    <span style="font-size:11px;color:var(--text2)">
+      Match by subgraph ID first, then by position. Unmatched subgraphs keep the new file's categories.
+    </span></span>
+  </label>`;
+
+  html += `</div>`;
+  document.getElementById('replaceValidation').innerHTML = html;
+  document.getElementById('replaceConfirmBtn').disabled = false;
+}
+
+async function confirmReplace(filename) {
+  if (!_replaceContent) return;
+  const preserve = document.getElementById('preserveCatsCheck')?.checked ?? true;
+  const r = await api('PUT', '/blueprints/' + encodeURIComponent(filename) + '/replace', {
+    content: _replaceContent,
+    preserve_categories: preserve,
+  });
+  if (r.ok) { toast('Replaced successfully'); closeModal(); await loadData(); }
+  else toast(r.error || 'Replace failed', true);
+}
 
 // ── Download ───────────────────────────────────────────────────────────────
 async function downloadBlueprint(filename) {

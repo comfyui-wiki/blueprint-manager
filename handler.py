@@ -88,6 +88,11 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "error": err}, 400)
             else:
                 self._json({"ok": True, "content": content})
+        elif path.startswith("/api/blueprints/") and path.endswith("/validate"):
+            filename = self._bp_filename(path, "/validate")
+            self._json(blueprints.validate_blueprint_schema(filename))
+        elif path == "/api/validate-all":
+            self._json(blueprints.validate_all_blueprints())
         else:
             self.send_error(404)
 
@@ -129,6 +134,14 @@ class Handler(BaseHTTPRequestHandler):
         elif path.startswith("/api/blueprints/") and path.endswith("/rename"):
             filename = self._bp_filename(path, "/rename")
             ok, msg = blueprints.rename_blueprint(filename, body.get("new_name", ""))
+            self._json({"ok": ok, "error": msg}, 200 if ok else 400)
+        elif path.startswith("/api/blueprints/") and path.endswith("/replace"):
+            filename = self._bp_filename(path, "/replace")
+            ok, msg = blueprints.replace_blueprint(
+                filename,
+                body.get("content", ""),
+                bool(body.get("preserve_categories", True)),
+            )
             self._json({"ok": ok, "error": msg}, 200 if ok else 400)
         else:
             self.send_error(404)
