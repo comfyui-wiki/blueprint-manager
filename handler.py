@@ -112,6 +112,9 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/clear-recent-imports":
             state.clear_recent_import_marks()
             self._json({"ok": True})
+        elif path == "/api/clear-recent-modified":
+            state.clear_recent_modified_marks()
+            self._json({"ok": True})
         else:
             self.send_error(404)
 

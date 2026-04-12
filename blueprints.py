@@ -44,6 +44,7 @@ def scan_blueprints() -> list[dict]:
     """Return a list of blueprint info dicts for every valid .json in BLUEPRINTS_DIR."""
     results = []
     recent_set = set(state.load_recent_import_filenames())
+    modified_set = set(state.load_recent_modified_filenames())
     for fpath in sorted(glob.glob(os.path.join(config.BLUEPRINTS_DIR, "*.json"))):
         fname = os.path.basename(fpath)
         if fname.startswith("."):
@@ -53,21 +54,33 @@ def scan_blueprints() -> list[dict]:
                 data = json.load(f)
         except json.JSONDecodeError:
             continue
+        extra = data.get("extra") or {}
         subgraphs = data.get("definitions", {}).get("subgraphs", [])
-        sg_list = [
-            {
+        sg_list = []
+        for idx, sg in enumerate(subgraphs):
+            # Unique node types used inside this subgraph (enables "search by node" queries)
+            node_types = sorted({
+                n.get("type", "")
+                for n in (sg.get("nodes") or [])
+                if isinstance(n, dict) and n.get("type")
+            })
+            sg_list.append({
                 "index": idx,
                 "name": sg.get("name", ""),
                 "category": sg.get("category", ""),
                 "id": sg.get("id", ""),
-            }
-            for idx, sg in enumerate(subgraphs)
-        ]
+                "description": sg.get("description", ""),
+                "node_types": node_types,
+            })
         results.append(
             {
                 "filename": fname,
                 "mtime": os.path.getmtime(fpath),
                 "recent_import": fname in recent_set,
+                "recent_modified": fname in modified_set,
+                # Blueprint-level searchable metadata
+                "description": extra.get("BlueprintDescription") or "",
+                "aliases": extra.get("BlueprintSearchAliases") or [],
                 "subgraphs": sg_list,
             }
         )
@@ -115,6 +128,7 @@ def update_category(filename: str, sg_index: int, new_category: str) -> tuple[bo
     subgraphs[sg_index]["category"] = new_category
     with open(fpath, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    state.track_modified(filename)
     return True, "OK"
 
 
@@ -134,6 +148,7 @@ def write_blueprint_content(filename: str, content: str) -> tuple[bool, str]:
             json.dump(data, f, ensure_ascii=False, indent=2)
     except OSError as e:
         return False, str(e)
+    state.track_modified(filename)
     return True, "OK"
 
 
@@ -171,6 +186,7 @@ def rename_blueprint(old_name: str, new_name: str) -> tuple[bool, str]:
         return False, "Target file already exists"
     os.rename(old_path, new_path)
     state.rename_in_recent_imports(old_name, new_name)
+    state.rename_in_recent_modified(old_name, new_name)
     return True, "OK"
 
 
@@ -210,6 +226,7 @@ def replace_blueprint(filename: str, new_content: str, preserve_categories: bool
             json.dump(new_data, f, ensure_ascii=False, indent=2)
     except OSError as e:
         return False, str(e)
+    state.track_modified(filename)
     return True, "OK"
 
 
@@ -463,4 +480,5 @@ def delete_blueprint(filename: str) -> tuple[bool, str]:
     except OSError as e:
         return False, str(e)
     state.remove_from_recent_imports(filename)
+    state.remove_from_recent_modified(filename)
     return True, "OK"

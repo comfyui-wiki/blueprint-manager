@@ -1,7 +1,7 @@
 // ── State ──────────────────────────────────────────────────────────────────
 let blueprints = [];
 let allCategories = [];
-let currentFilter = 'all';  // 'all' | 'uncategorized' | 'recent' | 'group:X' | 'X/Y'
+let currentFilter = 'all';  // 'all' | 'uncategorized' | 'recent' | 'modified' | 'group:X' | 'X/Y'
 let currentView = 'grid';
 let sortOrder = 'name';     // 'name' | 'mtime_desc'
 let scopeFilter = 'all';   // 'all' | 'recent_only'
@@ -21,10 +21,7 @@ async function api(method, path, body) {
 function recentImportCount() {
   return blueprints.filter(b => b.recent_import).length;
 }
-
-function isRecentImport(bp) {
-  return !!bp.recent_import;
-}
+function isRecentImport(bp) { return !!bp.recent_import; }
 
 async function clearImportMarks() {
   await api('POST', '/clear-recent-imports');
@@ -32,7 +29,7 @@ async function clearImportMarks() {
   scopeFilter = 'all';
   const sel = document.getElementById('scopeSelect');
   if (sel) sel.value = 'all';
-  toast('Recent import marks cleared');
+  toast('Import marks cleared');
   await loadData();
 }
 
@@ -41,7 +38,28 @@ function updateImportMarksButton() {
   const btn = document.getElementById('clearImportMarksBtn');
   if (!btn) return;
   btn.style.display = n ? 'inline-flex' : 'none';
-  btn.textContent = 'Clear recent marks (' + n + ')';
+  btn.textContent = `Clear import marks (${n})`;
+}
+
+// ── Recently modified ──────────────────────────────────────────────────────
+function recentModifiedCount() {
+  return blueprints.filter(b => b.recent_modified).length;
+}
+function isRecentModified(bp) { return !!bp.recent_modified; }
+
+async function clearModifiedMarks() {
+  await api('POST', '/clear-recent-modified');
+  if (currentFilter === 'modified') currentFilter = 'all';
+  toast('Modified marks cleared');
+  await loadData();
+}
+
+function updateModifiedMarksButton() {
+  const n = recentModifiedCount();
+  const btn = document.getElementById('clearModifiedMarksBtn');
+  if (!btn) return;
+  btn.style.display = n ? 'inline-flex' : 'none';
+  btn.textContent = `Clear modified marks (${n})`;
 }
 
 // ── Load ───────────────────────────────────────────────────────────────────
@@ -49,6 +67,7 @@ async function loadData() {
   blueprints = await api('GET', '/blueprints');
   allCategories = await api('GET', '/categories');
   updateImportMarksButton();
+  updateModifiedMarksButton();
   renderSidebar();
   renderContent();
 }
@@ -86,7 +105,12 @@ function renderSidebar() {
 
   if (recentCount > 0)
     html += `<div class="cat-item ${currentFilter==='recent'?'active':''}" onclick="filterBy('recent')"
-      style="color:var(--green)">✦ Recent imports <span class="count">${recentCount}</span></div>`;
+      style="color:var(--green)">✦ Recently imported <span class="count">${recentCount}</span></div>`;
+
+  const modCount = recentModifiedCount();
+  if (modCount > 0)
+    html += `<div class="cat-item ${currentFilter==='modified'?'active':''}" onclick="filterBy('modified')"
+      style="color:var(--accent)">✎ Recently modified <span class="count">${modCount}</span></div>`;
 
   if (uncatCount > 0)
     html += `<div class="cat-item ${currentFilter==='uncategorized'?'active':''}" onclick="filterBy('uncategorized')"
@@ -148,12 +172,24 @@ function renderContent() {
 
   let filtered = [];
   baseList.forEach(bp => {
-    const matchName = bp.filename.toLowerCase().includes(q);
+    const fq = bp.filename.toLowerCase();
+    // Blueprint-level match: filename, description, aliases
+    const matchBp = !q
+      || fq.includes(q)
+      || (bp.description || '').toLowerCase().includes(q)
+      || (bp.aliases || []).some(a => a.toLowerCase().includes(q));
+
     const sgs = bp.subgraphs.filter(sg => {
-      const matchQ = matchName || sg.name.toLowerCase().includes(q) || (sg.category||'').toLowerCase().includes(q);
+      // Subgraph-level match: name, category, description, node types
+      const matchSg = sg.name.toLowerCase().includes(q)
+        || (sg.category || '').toLowerCase().includes(q)
+        || (sg.description || '').toLowerCase().includes(q)
+        || (sg.node_types || []).some(t => t.toLowerCase().includes(q));
+      const matchQ = matchBp || matchSg;
       if (!matchQ) return false;
       if (currentFilter === 'all') return true;
       if (currentFilter === 'recent') return isRecentImport(bp);
+      if (currentFilter === 'modified') return isRecentModified(bp);
       if (currentFilter === 'uncategorized') return !sg.category;
       if (currentFilter.startsWith('group:')) {
         return sg.category && sg.category.split('/')[0] === currentFilter.slice(6);
@@ -217,18 +253,25 @@ function toggleMoreMenu(btn) {
 }
 
 function renderGrid(items) {
+  const q = document.getElementById('searchInput').value.toLowerCase();
   let html = '<div class="bp-grid">';
   items.forEach(bp => {
     const hasMissing = bp.subgraphs.some(s => !s.category);
     const isNew = isRecentImport(bp);
-    html += `<div class="bp-card ${hasMissing?'no-cat':''} ${isNew?'session-new':''}">`;
+    const isMod = isRecentModified(bp);
+    html += `<div class="bp-card ${hasMissing?'no-cat':''} ${isNew?'session-new':''} ${isMod?'session-modified':''}">`;
     if (bulkMode)
       html += `<input type="checkbox" class="checkbox" style="position:absolute;top:12px;right:12px"
         ${selectedSet.has(bp.filename)?'checked':''}
         onchange="toggleSelect('${escAttr(bp.filename)}', this.checked)">`;
     html += `<div class="bp-name">${esc(bp.filename.replace('.json',''))}`;
     if (isNew) html += ` <span class="badge new-import">New</span>`;
+    if (isRecentModified(bp)) html += ` <span class="badge modified">Modified</span>`;
     html += `</div>`;
+    // Blueprint-level description
+    if (bp.description)
+      html += `<div class="bp-desc">${esc(bp.description)}</div>`;
+
     bp.subgraphs.forEach(sg => {
       const catColor = sg.category ? categoryColor(sg.category) : 'var(--orange)';
       html += `<div class="bp-category">
@@ -236,6 +279,14 @@ function renderGrid(items) {
         ${sg.category ? formatCategory(sg.category) : '<span class="badge warn">No category</span>'}
         ${bp.subgraphs.length > 1 ? `<span style="color:var(--text2);font-size:11px">(${esc(sg.name)})</span>` : ''}
       </div>`;
+      if (sg.description)
+        html += `<div class="bp-desc" style="padding-left:14px">${esc(sg.description)}</div>`;
+      // Show matched node types when searching
+      if (q && sg.node_types && sg.node_types.length) {
+        const matched = sg.node_types.filter(t => t.toLowerCase().includes(q));
+        if (matched.length)
+          html += `<div class="bp-nodes">${matched.map(t => `<span class="node-chip">${esc(t)}</span>`).join('')}</div>`;
+      }
     });
     html += `<div class="bp-actions">
       <button class="btn" onclick="openView('${escAttr(bp.filename)}')">View / Edit</button>
@@ -248,6 +299,7 @@ function renderGrid(items) {
 }
 
 function renderTable(items) {
+  const q = document.getElementById('searchInput').value.toLowerCase();
   let html = `<table class="bp-table"><thead><tr>`;
   if (bulkMode) html += `<th style="width:30px"></th>`;
   html += `<th>Blueprint</th><th>Subgraph</th><th>Category</th><th>Actions</th></tr></thead><tbody>`;
@@ -259,7 +311,8 @@ function renderTable(items) {
           onchange="toggleSelect('${escAttr(bp.filename)}', this.checked)"></td>`;
       const isNew = isRecentImport(bp);
       html += `<td>${i===0 ? esc(bp.filename.replace('.json','')) +
-        (isNew ? ' <span class="badge new-import">New</span>' : '') : ''}</td>
+        (isNew ? ' <span class="badge new-import">New</span>' : '') +
+        (isRecentModified(bp) ? ' <span class="badge modified">Modified</span>' : '') : ''}</td>
         <td>${esc(sg.name)}</td><td>`;
       if (sg.category) {
         const c = categoryColor(sg.category);

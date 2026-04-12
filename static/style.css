@@ -98,7 +98,17 @@ body {
 .bp-card .bp-actions { display:flex; gap:5px; margin-top:10px; align-items:center; }
 .bp-card .bp-actions .btn { font-size:11px; padding:3px 9px; }
 .bp-card.no-cat { border-left: 3px solid var(--orange); }
-.bp-card.session-new { border-color: rgba(63,185,80,0.45); box-shadow: 0 0 0 1px rgba(63,185,80,0.25); }
+.bp-desc {
+  font-size:11px; color:var(--text2); margin-bottom:4px; line-height:1.4;
+  overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+}
+.bp-nodes { display:flex; flex-wrap:wrap; gap:3px; margin-top:3px; margin-bottom:2px; }
+.node-chip {
+  font-size:10px; padding:1px 6px; border-radius:4px;
+  background:rgba(88,166,255,.12); color:var(--accent); font-family:monospace;
+}
+.bp-card.session-new      { border-color: rgba(63,185,80,0.45);  box-shadow: 0 0 0 1px rgba(63,185,80,0.25); }
+.bp-card.session-modified { border-color: rgba(88,166,255,0.45); box-shadow: 0 0 0 1px rgba(88,166,255,0.2); }
 
 /* ── More-actions dropdown ── */
 .more-menu { position:relative; display:inline-block; }
@@ -122,6 +132,7 @@ body {
 .badge.warn { background:rgba(210,153,34,0.15); color:var(--orange); }
 .badge.ok { background:rgba(63,185,80,0.15); color:var(--green); }
 .badge.new-import { background:rgba(63,185,80,0.2); color:var(--green); font-weight:600; }
+.badge.modified   { background:rgba(88,166,255,0.18); color:var(--accent); font-weight:600; }
 
 /* ── Table view ── */
 .bp-table { width:100%; border-collapse:collapse; }
